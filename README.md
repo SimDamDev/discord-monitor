@@ -5,8 +5,8 @@ Une application web moderne pour surveiller les messages d'un canal Discord en t
 ## 🚀 Fonctionnalités
 
 - **Surveillance en temps réel** : Recevez instantanément les nouveaux messages d'un canal Discord spécifique
-- **Interface web moderne** : Interface utilisateur intuitive et responsive
-- **Configuration simple** : Configuration via interface web ou fichier de configuration
+- **Interface web moderne** : Interface utilisateur intuitive et responsive avec configuration masquée
+- **Configuration .env** : Configuration sécurisée via fichier .env avec chargement automatique
 - **Logs détaillés** : Suivi complet des activités et erreurs
 - **Installation automatique** : Script d'installation pour VPS en une commande
 - **Service système** : Fonctionne comme un service système avec démarrage automatique
@@ -50,15 +50,26 @@ sudo discord-monitor start
 ## 📖 Documentation
 
 - [Installation détaillée](docs/installation.md)
+- [Configuration .env](docs/configuration.md)
 - [Architecture du projet](docs/architecture.md)
 - [Changelog](docs/changelog.md)
 
 ## 🌐 Utilisation
 
-1. **Accès** : Ouvrez `http://votre-ip-serveur:5000` dans votre navigateur
-2. **Configuration** : Entrez votre token de bot Discord et les IDs nécessaires
-3. **Démarrage** : Cliquez sur "Démarrer" pour commencer la surveillance
+### Configuration via fichier .env (Recommandé)
+
+1. **Créer le fichier .env** : Copiez `.env.example` vers `.env` et configurez vos paramètres
+2. **Accès** : Ouvrez `http://votre-ip-serveur:5000` dans votre navigateur
+3. **Démarrage automatique** : Le bot se configure et démarre automatiquement
 4. **Surveillance** : Les messages apparaîtront en temps réel
+
+### Configuration via interface web
+
+1. **Accès** : Ouvrez `http://votre-ip-serveur:5000` dans votre navigateur
+2. **Configuration** : Cliquez sur "Configuration" pour afficher les champs
+3. **Sauvegarde** : Entrez vos paramètres et sauvegardez (sauvegarde automatique dans .env)
+4. **Démarrage** : Cliquez sur "Démarrer" pour commencer la surveillance
+5. **Surveillance** : Les messages apparaîtront en temps réel
 
 ## 🛠️ Gestion du service
 

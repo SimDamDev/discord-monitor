@@ -38,21 +38,39 @@ discord_monitor = DiscordMonitor()
 set_discord_monitor(discord_monitor)
 
 # Configuration automatique si les variables d'environnement sont présentes
-if all([os.getenv('DISCORD_TOKEN'), os.getenv('DISCORD_GUILD_ID'), os.getenv('DISCORD_CHANNEL_ID')]):
-    try:
-        from src.routes.discord import handle_new_message, handle_status_change
-        discord_monitor.setup(
-            token=os.getenv('DISCORD_TOKEN'),
-            guild_id=int(os.getenv('DISCORD_GUILD_ID')),
-            channel_id=int(os.getenv('DISCORD_CHANNEL_ID')),
-            message_callback=handle_new_message,
-            status_callback=handle_status_change
-        )
-        print("✅ Configuration Discord chargée depuis les variables d'environnement")
-        print(f"Guild ID: {os.getenv('DISCORD_GUILD_ID')}")
-        print(f"Channel ID: {os.getenv('DISCORD_CHANNEL_ID')}")
-    except ValueError as e:
-        print(f"Erreur dans la configuration Discord: {e}")
+def load_discord_config():
+    """Charge la configuration Discord depuis les variables d'environnement"""
+    token = os.getenv('DISCORD_TOKEN')
+    guild_id = os.getenv('DISCORD_GUILD_ID')
+    channel_id = os.getenv('DISCORD_CHANNEL_ID')
+    
+    # Vérifier si toutes les variables sont configurées et ne sont pas des valeurs par défaut
+    if (token and token != 'your_discord_bot_token_here' and
+        guild_id and guild_id != 'your_guild_id_here' and
+        channel_id and channel_id != 'your_channel_id_here'):
+        try:
+            from src.routes.discord import handle_new_message, handle_status_change
+            discord_monitor.setup(
+                token=token,
+                guild_id=int(guild_id),
+                channel_id=int(channel_id),
+                message_callback=handle_new_message,
+                status_callback=handle_status_change
+            )
+            print("✅ Configuration Discord chargée depuis le fichier .env")
+            print(f"Guild ID: {guild_id}")
+            print(f"Channel ID: {channel_id}")
+            return True
+        except ValueError as e:
+            print(f"❌ Erreur dans la configuration Discord: {e}")
+            return False
+    else:
+        print("⚠️  Configuration Discord non trouvée dans le fichier .env")
+        print("   Veuillez configurer DISCORD_TOKEN, DISCORD_GUILD_ID et DISCORD_CHANNEL_ID")
+        return False
+
+# Charger la configuration Discord au démarrage
+load_discord_config()
 
 # uncomment if you need to use database
 app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(os.path.dirname(__file__), 'database', 'app.db')}"

@@ -17,7 +17,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            color: #333;
+            color: #333;https://streamlabscharity.com/teams/@zevent-2025/zevent-2025?member=552536077466999993&l=fr-FR
         }
 
         .container {
@@ -156,6 +156,15 @@
 
         .btn-danger:hover {
             background: #c62828;
+        }
+
+        .btn-secondary {
+            background: #72767d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5f6368;
         }
 
         .btn:disabled {
@@ -325,8 +334,8 @@
         </div>
 
         <div class="main-grid">
-            <!-- Configuration -->
-            <div class="card">
+            <!-- Configuration (masquée par défaut) -->
+            <div class="card" id="config-card" style="display: none;">
                 <h2>
                     <i class="fas fa-cog"></i>
                     Configuration
@@ -376,6 +385,10 @@
                             <i class="fas fa-stop"></i>
                             Arrêter
                         </button>
+                        <button type="button" id="hide-config-btn" class="btn btn-secondary">
+                            <i class="fas fa-eye-slash"></i>
+                            Masquer
+                        </button>
                     </div>
                 </form>
             </div>
@@ -392,10 +405,16 @@
                 </div>
 
                 <div style="margin-top: 20px;">
-                    <h3 style="margin-bottom: 10px; color: #5865f2;">
-                        <i class="fas fa-history"></i>
-                        Logs récents
-                    </h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0; color: #5865f2;">
+                            <i class="fas fa-history"></i>
+                            Logs récents
+                        </h3>
+                        <button type="button" id="show-config-btn" class="btn btn-secondary" style="font-size: 12px; padding: 8px 12px;">
+                            <i class="fas fa-cog"></i>
+                            Configuration
+                        </button>
+                    </div>
                     <div id="logs" style="background: #f8f9fa; padding: 15px; border-radius: 8px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px;">
                         <div style="color: #72767d;">En attente de configuration...</div>
                     </div>
@@ -472,7 +491,14 @@
                 updateUIState(config.status);
                 
                 if (isConfigured) {
-                    showAlert('Configuration chargée avec succès', 'success');
+                    addLog('Configuration chargée depuis le fichier .env', 'success');
+                    // Masquer le bouton de configuration si déjà configuré
+                    const showConfigBtn = document.getElementById('show-config-btn');
+                    if (showConfigBtn) {
+                        showConfigBtn.style.display = 'none';
+                    }
+                } else {
+                    addLog('Configuration non trouvée - cliquez sur "Configuration" pour configurer', 'info');
                 }
             } catch (error) {
                 showAlert('Erreur lors du chargement de la configuration', 'error');
@@ -485,6 +511,8 @@
             document.getElementById('config-form').addEventListener('submit', saveConfiguration);
             document.getElementById('start-btn').addEventListener('click', startBot);
             document.getElementById('stop-btn').addEventListener('click', stopBot);
+            document.getElementById('show-config-btn').addEventListener('click', showConfig);
+            document.getElementById('hide-config-btn').addEventListener('click', hideConfig);
         }
 
         // Sauvegarde de la configuration
@@ -516,10 +544,15 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    showAlert('Configuration sauvegardée avec succès', 'success');
+                    showAlert('Configuration sauvegardée dans le fichier .env avec succès', 'success');
                     isConfigured = true;
                     updateUIState('disconnected');
-                    addLog('Configuration mise à jour', 'success');
+                    addLog('Configuration sauvegardée dans .env', 'success');
+                    
+                    // Masquer la configuration après sauvegarde
+                    setTimeout(() => {
+                        hideConfig();
+                    }, 2000);
                 } else {
                     showAlert(result.error || 'Erreur lors de la sauvegarde', 'error');
                 }
@@ -725,6 +758,27 @@
             if (logs.length > 20) {
                 logs[logs.length - 1].remove();
             }
+        }
+
+        // Affichage de la configuration
+        function showConfig() {
+            const configCard = document.getElementById('config-card');
+            const showConfigBtn = document.getElementById('show-config-btn');
+            
+            configCard.style.display = 'block';
+            showConfigBtn.style.display = 'none';
+            
+            // Scroll vers la configuration
+            configCard.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Masquage de la configuration
+        function hideConfig() {
+            const configCard = document.getElementById('config-card');
+            const showConfigBtn = document.getElementById('show-config-btn');
+            
+            configCard.style.display = 'none';
+            showConfigBtn.style.display = 'inline-flex';
         }
     </script>
 </body>
