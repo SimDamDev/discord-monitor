@@ -1072,10 +1072,35 @@ body {
     font-size: var(--font-size-sm);
 }
 
-.update-button:hover {
+/* États du bouton de mise à jour */
+.update-button--available {
+    background: linear-gradient(135deg, var(--color-warning), var(--color-warning-hover));
+}
+
+.update-button--available:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
     background: linear-gradient(135deg, var(--color-warning-hover), var(--color-warning));
+}
+
+.update-button--up-to-date {
+    background: linear-gradient(135deg, var(--color-success), var(--color-success-dark));
+}
+
+.update-button--up-to-date:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    background: linear-gradient(135deg, var(--color-success-hover), var(--color-success));
+}
+
+.update-button--disabled {
+    background: linear-gradient(135deg, var(--color-secondary), var(--color-secondary-hover));
+    cursor: not-allowed;
+}
+
+.update-button--error {
+    background: linear-gradient(135deg, var(--color-error), var(--color-error-hover));
+    cursor: not-allowed;
 }
 
 .update-button:focus {

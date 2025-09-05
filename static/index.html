@@ -32,9 +32,9 @@
                     </div>
                     
                     <div class="control-buttons">
-                        <button class="update-button" id="update-button" aria-label="Mettre à jour l'application" style="display: none;">
+                        <button class="update-button" id="update-button" aria-label="Mettre à jour l'application">
                             <i class="fas fa-download" aria-hidden="true"></i>
-                            <span class="update-count" id="update-count">0</span>
+                            <span class="update-count" id="update-count" style="display: none;">0</span>
                         </button>
                         
                         <button class="config-button" id="config-button" aria-label="Ouvrir la configuration">
@@ -718,24 +718,65 @@
                     const updateStatus = await response.json();
                     
                     if (updateStatus.git_available && updateStatus.auto_update_enabled) {
+                        // Toujours afficher le bouton
+                        this.elements.updateButton.style.display = 'flex';
+                        
                         if (updateStatus.updates_available > 0) {
-                            this.elements.updateButton.style.display = 'flex';
+                            // Des mises à jour sont disponibles
+                            this.elements.updateButton.classList.remove('update-button--up-to-date');
+                            this.elements.updateButton.classList.add('update-button--available');
+                            this.elements.updateCount.style.display = 'flex';
                             this.elements.updateCount.textContent = updateStatus.updates_available;
-                            this.elements.updateButton.title = `${updateStatus.updates_available} mise(s) à jour disponible(s)`;
+                            this.elements.updateButton.title = `${updateStatus.updates_available} mise(s) à jour disponible(s) - Cliquez pour mettre à jour`;
+                            this.elements.updateButton.disabled = false;
                         } else {
-                            this.elements.updateButton.style.display = 'none';
+                            // Aucune mise à jour disponible
+                            this.elements.updateButton.classList.remove('update-button--available');
+                            this.elements.updateButton.classList.add('update-button--up-to-date');
+                            this.elements.updateCount.style.display = 'none';
+                            this.elements.updateButton.title = 'Application à jour - Cliquez pour vérifier les mises à jour';
+                            this.elements.updateButton.disabled = false;
                         }
                     } else {
-                        this.elements.updateButton.style.display = 'none';
+                        // Git non disponible ou mises à jour désactivées
+                        this.elements.updateButton.style.display = 'flex';
+                        this.elements.updateButton.classList.remove('update-button--available', 'update-button--up-to-date');
+                        this.elements.updateButton.classList.add('update-button--disabled');
+                        this.elements.updateCount.style.display = 'none';
+                        this.elements.updateButton.title = 'Mises à jour non disponibles (Git manquant ou désactivé)';
+                        this.elements.updateButton.disabled = true;
                     }
                 } catch (error) {
                     console.log('Erreur lors de la vérification des mises à jour:', error);
-                    this.elements.updateButton.style.display = 'none';
+                    // Afficher le bouton en état d'erreur
+                    this.elements.updateButton.style.display = 'flex';
+                    this.elements.updateButton.classList.remove('update-button--available', 'update-button--up-to-date');
+                    this.elements.updateButton.classList.add('update-button--error');
+                    this.elements.updateCount.style.display = 'none';
+                    this.elements.updateButton.title = 'Erreur lors de la vérification des mises à jour';
+                    this.elements.updateButton.disabled = true;
                 }
             },
 
             // Gestion du clic sur le bouton de mise à jour
             async handleUpdateClick() {
+                // Si le bouton est désactivé, ne rien faire
+                if (this.elements.updateButton.disabled) {
+                    return;
+                }
+
+                // Si aucune mise à jour n'est disponible, forcer une vérification
+                if (this.elements.updateButton.classList.contains('update-button--up-to-date')) {
+                    this.addLog('Vérification forcée des mises à jour...', 'info');
+                    await this.checkForUpdates();
+                    
+                    // Si toujours aucune mise à jour après vérification
+                    if (this.elements.updateButton.classList.contains('update-button--up-to-date')) {
+                        this.addLog('Aucune mise à jour disponible', 'info');
+                        return;
+                    }
+                }
+
                 if (!confirm('Êtes-vous sûr de vouloir mettre à jour l\'application ? Cela redémarrera le service.')) {
                     return;
                 }
@@ -755,7 +796,6 @@
 
                     if (response.ok) {
                         this.addLog('Mise à jour effectuée avec succès', 'success');
-                        this.elements.updateButton.style.display = 'none';
                         
                         // Recharger la page après un délai
                         setTimeout(() => {
