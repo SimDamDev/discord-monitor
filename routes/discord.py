@@ -333,16 +333,62 @@ def update_application():
         if socketio_instance:
             socketio_instance.emit('status_change', {
                 'status': 'updated',
-                'message': 'Application mise à jour avec succès',
+                'message': 'Application mise à jour avec succès - Redémarrage en cours...',
                 'timestamp': datetime.now().isoformat()
             }, namespace='/')
         
-        return jsonify({
+        # Programmer le redémarrage du service après un délai
+        restart_service = os.getenv('AUTO_RESTART_SERVICE', 'True').lower() == 'true'
+        
+        response_data = {
             'message': 'Mise à jour effectuée avec succès',
             'results': results,
             'config_restored': current_config['token'] != 'your_discord_bot_token_here',
-            'bot_restarted': bot_was_running
-        })
+            'bot_restarted': bot_was_running,
+            'service_restart': restart_service
+        }
+        
+        if restart_service:
+            # Programmer le redémarrage après avoir envoyé la réponse
+            import threading
+            import time
+            
+            def delayed_restart():
+                time.sleep(2)  # Attendre 2 secondes pour que la réponse soit envoyée
+                try:
+                    # Essayer différentes méthodes de redémarrage selon l'environnement
+                    restart_commands = [
+                        ['systemctl', 'restart', 'discord-monitor'],  # systemd
+                        ['service', 'discord-monitor', 'restart'],    # init.d
+                        ['supervisorctl', 'restart', 'discord-monitor'],  # supervisor
+                        ['pkill', '-f', 'main.py'],  # Fallback: tuer le processus
+                    ]
+                    
+                    for cmd in restart_commands:
+                        try:
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                            if result.returncode == 0:
+                                print(f"✅ Service redémarré avec: {' '.join(cmd)}")
+                                break
+                        except (subprocess.TimeoutExpired, FileNotFoundError):
+                            continue
+                    else:
+                        # Si aucune commande n'a fonctionné, forcer l'arrêt du processus
+                        print("⚠️ Redémarrage forcé du processus Python")
+                        os._exit(0)  # Force l'arrêt du processus
+                        
+                except Exception as e:
+                    print(f"❌ Erreur lors du redémarrage: {e}")
+                    # En dernier recours, forcer l'arrêt
+                    os._exit(0)
+            
+            # Lancer le redémarrage en arrière-plan
+            restart_thread = threading.Thread(target=delayed_restart, daemon=True)
+            restart_thread.start()
+            
+            response_data['message'] += ' - Service en cours de redémarrage'
+        
+        return jsonify(response_data)
         
     except Exception as e:
         return jsonify({

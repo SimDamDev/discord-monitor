@@ -797,20 +797,77 @@
                     if (response.ok) {
                         this.addLog('Mise à jour effectuée avec succès', 'success');
                         
-                        // Recharger la page après un délai
-                        setTimeout(() => {
-                            this.addLog('Rechargement de la page...', 'info');
-                            window.location.reload();
-                        }, 2000);
+                        if (result.service_restart) {
+                            this.addLog('Redémarrage du service en cours...', 'info');
+                            this.showLoading('Redémarrage du service...');
+                            
+                            // Attendre un peu puis essayer de reconnecter
+                            setTimeout(() => {
+                                this.addLog('Tentative de reconnexion...', 'info');
+                                this.attemptReconnection();
+                            }, 5000);
+                        } else {
+                            // Recharger la page après un délai si pas de redémarrage
+                            setTimeout(() => {
+                                this.addLog('Rechargement de la page...', 'info');
+                                window.location.reload();
+                            }, 2000);
+                        }
                     } else {
                         this.addLog(result.error || 'Erreur lors de la mise à jour', 'error');
                         this.elements.updateButton.disabled = false;
+                        this.hideLoading();
                     }
                 } catch (error) {
                     this.addLog('Erreur de connexion lors de la mise à jour: ' + error.message, 'error');
                     this.elements.updateButton.disabled = false;
-                } finally {
                     this.hideLoading();
+                }
+            },
+
+            // Tentative de reconnexion après redémarrage du service
+            async attemptReconnection(maxAttempts = 10, currentAttempt = 1) {
+                try {
+                    this.addLog(`Tentative de reconnexion ${currentAttempt}/${maxAttempts}...`, 'info');
+                    
+                    // Tester si le serveur répond
+                    const response = await fetch('/api/discord/status', {
+                        method: 'GET',
+                        timeout: 5000
+                    });
+                    
+                    if (response.ok) {
+                        this.addLog('Reconnexion réussie ! Rechargement de la page...', 'success');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                        return;
+                    }
+                } catch (error) {
+                    // Le serveur n'est pas encore prêt
+                }
+                
+                if (currentAttempt < maxAttempts) {
+                    // Attendre avant la prochaine tentative (délai croissant)
+                    const delay = Math.min(2000 + (currentAttempt * 1000), 10000);
+                    setTimeout(() => {
+                        this.attemptReconnection(maxAttempts, currentAttempt + 1);
+                    }, delay);
+                } else {
+                    this.addLog('Impossible de se reconnecter automatiquement. Veuillez recharger la page manuellement.', 'error');
+                    this.hideLoading();
+                    
+                    // Afficher un bouton de rechargement manuel
+                    const reloadButton = document.createElement('button');
+                    reloadButton.textContent = 'Recharger la page';
+                    reloadButton.className = 'hero-button hero-button--error';
+                    reloadButton.onclick = () => window.location.reload();
+                    
+                    const heroSection = document.querySelector('.hero-section');
+                    if (heroSection) {
+                        heroSection.innerHTML = '';
+                        heroSection.appendChild(reloadButton);
+                    }
                 }
             },
 
