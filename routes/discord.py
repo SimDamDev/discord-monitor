@@ -213,7 +213,46 @@ def update_application():
         bot_was_running = False
         if discord_monitor and discord_monitor.is_running:
             bot_was_running = True
+            print("🛑 Arrêt du bot Discord avant mise à jour...")
+            
+            # Arrêter le bot
             discord_monitor.stop()
+            
+            # Attendre que le bot soit complètement déconnecté
+            import time
+            max_wait = 10  # Maximum 10 secondes d'attente
+            wait_time = 0
+            
+            while discord_monitor.is_running and wait_time < max_wait:
+                print(f"⏳ Attente de la déconnexion du bot... ({wait_time + 1}s/{max_wait}s)")
+                time.sleep(1)
+                wait_time += 1
+            
+            if discord_monitor.is_running:
+                print("⚠️ Le bot ne s'est pas arrêté proprement, forçage de l'arrêt...")
+                # Forcer l'arrêt si nécessaire
+                try:
+                    if hasattr(discord_monitor, 'client') and discord_monitor.client:
+                        import asyncio
+                        if discord_monitor.client.is_closed() == False:
+                            # Créer une nouvelle boucle d'événements si nécessaire
+                            try:
+                                loop = asyncio.get_event_loop()
+                            except RuntimeError:
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                            
+                            # Forcer la fermeture
+                            loop.run_until_complete(discord_monitor.client.close())
+                            print("🔌 Connexion Discord fermée de force")
+                except Exception as e:
+                    print(f"❌ Erreur lors de la fermeture forcée: {e}")
+            else:
+                print("✅ Bot Discord arrêté avec succès")
+            
+            # Attendre encore un peu pour s'assurer que Discord libère la connexion
+            print("⏳ Attente supplémentaire pour libération de la connexion Discord...")
+            time.sleep(3)
             
         # Sauvegarder la configuration actuelle
         current_config = {
@@ -315,7 +354,7 @@ def update_application():
                     
                     load_dotenv(override=True)
         
-        # Reconfigurer le bot si nécessaire
+        # Reconfigurer le bot si nécessaire (mais ne pas le redémarrer maintenant)
         if discord_monitor and current_config['token'] and current_config['token'] != 'your_discord_bot_token_here':
             discord_monitor.setup(
                 token=current_config['token'],
@@ -325,9 +364,18 @@ def update_application():
                 status_callback=handle_status_change
             )
             
-            # Redémarrer le bot s'il était en cours d'exécution
-            if bot_was_running:
+            # NE PAS redémarrer le bot maintenant si le service va redémarrer
+            # Le bot sera automatiquement redémarré avec le nouveau service
+            restart_service = os.getenv('AUTO_RESTART_SERVICE', 'True').lower() == 'true'
+            
+            if bot_was_running and not restart_service:
+                # Seulement redémarrer le bot si le service ne va pas redémarrer
+                print("🔄 Redémarrage du bot Discord (pas de redémarrage de service)...")
                 discord_monitor.start()
+            elif bot_was_running and restart_service:
+                print("⏳ Bot Discord sera redémarré avec le nouveau service...")
+            else:
+                print("ℹ️ Bot Discord n'était pas en cours d'exécution")
         
         # Notifier via WebSocket
         if socketio_instance:
