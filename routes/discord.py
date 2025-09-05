@@ -195,3 +195,239 @@ def handle_status_change(status, message):
     else:
         print("❌ SocketIO non initialisé pour le statut")
 
+
+
+@discord_bp.route('/update', methods=['POST'])
+def update_application():
+    """Met à jour l'application depuis Git"""
+    import subprocess
+    import sys
+    
+    try:
+        # Vérifier si les mises à jour sont activées
+        auto_update = os.getenv('AUTO_UPDATE_ENABLED', 'True').lower() == 'true'
+        if not auto_update:
+            return jsonify({'error': 'Les mises à jour automatiques sont désactivées'}), 403
+        
+        # Arrêter le bot s'il est en cours d'exécution
+        bot_was_running = False
+        if discord_monitor and discord_monitor.is_running:
+            bot_was_running = True
+            discord_monitor.stop()
+            
+        # Sauvegarder la configuration actuelle
+        current_config = {
+            'token': os.getenv('DISCORD_TOKEN'),
+            'guild_id': os.getenv('DISCORD_GUILD_ID'),
+            'channel_id': os.getenv('DISCORD_CHANNEL_ID')
+        }
+        
+        # Obtenir la branche de mise à jour
+        update_branch = os.getenv('UPDATE_BRANCH', 'master')
+        
+        # Exécuter les commandes Git
+        commands = [
+            ['git', 'fetch', 'origin'],
+            ['git', 'reset', '--hard', f'origin/{update_branch}'],
+            ['git', 'clean', '-fd']
+        ]
+        
+        results = []
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    cwd=os.path.dirname(os.path.dirname(__file__)),
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                results.append({
+                    'command': ' '.join(cmd),
+                    'returncode': result.returncode,
+                    'stdout': result.stdout,
+                    'stderr': result.stderr
+                })
+                
+                if result.returncode != 0:
+                    return jsonify({
+                        'error': f'Erreur lors de l\'exécution de {" ".join(cmd)}',
+                        'details': result.stderr,
+                        'results': results
+                    }), 500
+                    
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    'error': f'Timeout lors de l\'exécution de {" ".join(cmd)}',
+                    'results': results
+                }), 500
+            except Exception as e:
+                return jsonify({
+                    'error': f'Erreur lors de l\'exécution de {" ".join(cmd)}: {str(e)}',
+                    'results': results
+                }), 500
+        
+        # Recharger les variables d'environnement
+        load_dotenv(override=True)
+        
+        # Restaurer la configuration si elle a été perdue
+        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+        if os.path.exists(env_path):
+            # Vérifier si la config est toujours là
+            current_token = os.getenv('DISCORD_TOKEN')
+            if not current_token or current_token == 'your_discord_bot_token_here':
+                # Restaurer la configuration
+                if current_config['token'] and current_config['token'] != 'your_discord_bot_token_here':
+                    with open(env_path, 'r', encoding='utf-8') as f:
+                        env_lines = f.readlines()
+                    
+                    updated_lines = []
+                    found_vars = set()
+                    
+                    for line in env_lines:
+                        line_stripped = line.strip()
+                        if '=' in line_stripped and not line_stripped.startswith('#'):
+                            var_name = line_stripped.split('=')[0].strip()
+                            if var_name == 'DISCORD_TOKEN':
+                                updated_lines.append(f"DISCORD_TOKEN={current_config['token']}\n")
+                                found_vars.add('DISCORD_TOKEN')
+                            elif var_name == 'DISCORD_GUILD_ID':
+                                updated_lines.append(f"DISCORD_GUILD_ID={current_config['guild_id']}\n")
+                                found_vars.add('DISCORD_GUILD_ID')
+                            elif var_name == 'DISCORD_CHANNEL_ID':
+                                updated_lines.append(f"DISCORD_CHANNEL_ID={current_config['channel_id']}\n")
+                                found_vars.add('DISCORD_CHANNEL_ID')
+                            else:
+                                updated_lines.append(line)
+                        else:
+                            updated_lines.append(line)
+                    
+                    # Ajouter les variables manquantes
+                    if 'DISCORD_TOKEN' not in found_vars and current_config['token']:
+                        updated_lines.append(f"DISCORD_TOKEN={current_config['token']}\n")
+                    if 'DISCORD_GUILD_ID' not in found_vars and current_config['guild_id']:
+                        updated_lines.append(f"DISCORD_GUILD_ID={current_config['guild_id']}\n")
+                    if 'DISCORD_CHANNEL_ID' not in found_vars and current_config['channel_id']:
+                        updated_lines.append(f"DISCORD_CHANNEL_ID={current_config['channel_id']}\n")
+                    
+                    with open(env_path, 'w', encoding='utf-8') as f:
+                        f.writelines(updated_lines)
+                    
+                    load_dotenv(override=True)
+        
+        # Reconfigurer le bot si nécessaire
+        if discord_monitor and current_config['token'] and current_config['token'] != 'your_discord_bot_token_here':
+            discord_monitor.setup(
+                token=current_config['token'],
+                guild_id=int(current_config['guild_id']),
+                channel_id=int(current_config['channel_id']),
+                message_callback=handle_new_message,
+                status_callback=handle_status_change
+            )
+            
+            # Redémarrer le bot s'il était en cours d'exécution
+            if bot_was_running:
+                discord_monitor.start()
+        
+        # Notifier via WebSocket
+        if socketio_instance:
+            socketio_instance.emit('status_change', {
+                'status': 'updated',
+                'message': 'Application mise à jour avec succès',
+                'timestamp': datetime.now().isoformat()
+            }, namespace='/')
+        
+        return jsonify({
+            'message': 'Mise à jour effectuée avec succès',
+            'results': results,
+            'config_restored': current_config['token'] != 'your_discord_bot_token_here',
+            'bot_restarted': bot_was_running
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'Erreur lors de la mise à jour: {str(e)}',
+            'type': type(e).__name__
+        }), 500
+
+@discord_bp.route('/update/status', methods=['GET'])
+def get_update_status():
+    """Récupère le statut des mises à jour"""
+    import subprocess
+    
+    try:
+        # Vérifier si on est dans un repo Git
+        result = subprocess.run(
+            ['git', 'rev-parse', '--git-dir'],
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            return jsonify({
+                'git_available': False,
+                'error': 'Pas un repository Git'
+            })
+        
+        # Obtenir la branche actuelle
+        result = subprocess.run(
+            ['git', 'branch', '--show-current'],
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            capture_output=True,
+            text=True
+        )
+        current_branch = result.stdout.strip() if result.returncode == 0 else 'unknown'
+        
+        # Obtenir le dernier commit
+        result = subprocess.run(
+            ['git', 'log', '-1', '--format=%H|%s|%an|%ad', '--date=iso'],
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            capture_output=True,
+            text=True
+        )
+        
+        commit_info = {}
+        if result.returncode == 0 and result.stdout.strip():
+            parts = result.stdout.strip().split('|')
+            if len(parts) >= 4:
+                commit_info = {
+                    'hash': parts[0][:8],
+                    'message': parts[1],
+                    'author': parts[2],
+                    'date': parts[3]
+                }
+        
+        # Vérifier s'il y a des mises à jour disponibles
+        subprocess.run(['git', 'fetch', 'origin'], 
+                      cwd=os.path.dirname(os.path.dirname(__file__)),
+                      capture_output=True)
+        
+        update_branch = os.getenv('UPDATE_BRANCH', 'master')
+        result = subprocess.run(
+            ['git', 'rev-list', '--count', f'HEAD..origin/{update_branch}'],
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            capture_output=True,
+            text=True
+        )
+        
+        updates_available = 0
+        if result.returncode == 0 and result.stdout.strip().isdigit():
+            updates_available = int(result.stdout.strip())
+        
+        return jsonify({
+            'git_available': True,
+            'auto_update_enabled': os.getenv('AUTO_UPDATE_ENABLED', 'True').lower() == 'true',
+            'current_branch': current_branch,
+            'update_branch': update_branch,
+            'current_commit': commit_info,
+            'updates_available': updates_available,
+            'can_update': updates_available > 0
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'git_available': False,
+            'error': str(e)
+        })
+

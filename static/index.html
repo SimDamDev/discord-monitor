@@ -31,10 +31,17 @@
                         <span class="status-text">Non configuré</span>
                     </div>
                     
-                    <button class="config-button" id="config-button" aria-label="Ouvrir la configuration">
-                        <i class="fas fa-cog" aria-hidden="true"></i>
-                        <span>Configuration</span>
-                    </button>
+                    <div class="control-buttons">
+                        <button class="update-button" id="update-button" aria-label="Mettre à jour l'application" style="display: none;">
+                            <i class="fas fa-download" aria-hidden="true"></i>
+                            <span class="update-count" id="update-count">0</span>
+                        </button>
+                        
+                        <button class="config-button" id="config-button" aria-label="Ouvrir la configuration">
+                            <i class="fas fa-cog" aria-hidden="true"></i>
+                            <span>Configuration</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Bouton principal (Hero Button) -->
@@ -232,6 +239,8 @@
                 this.elements.statusIndicator = document.getElementById('status-indicator');
                 this.elements.configModal = document.getElementById('config-modal');
                 this.elements.configButton = document.getElementById('config-button');
+                this.elements.updateButton = document.getElementById('update-button');
+                this.elements.updateCount = document.getElementById('update-count');
                 this.elements.logsContent = document.getElementById('logs-content');
                 this.elements.messagesContainer = document.getElementById('messages-container');
                 this.elements.messageCount = document.getElementById('message-count');
@@ -269,6 +278,9 @@
                 // Bouton de configuration
                 this.elements.configButton.addEventListener('click', () => this.openConfigModal());
                 
+                // Bouton de mise à jour
+                this.elements.updateButton.addEventListener('click', () => this.handleUpdateClick());
+                
                 // Modal de configuration
                 document.getElementById('config-modal-close').addEventListener('click', () => this.closeConfigModal());
                 document.getElementById('config-modal-backdrop').addEventListener('click', () => this.closeConfigModal());
@@ -281,6 +293,10 @@
                         this.closeConfigModal();
                     }
                 });
+                
+                // Vérifier les mises à jour périodiquement
+                this.checkForUpdates();
+                setInterval(() => this.checkForUpdates(), 300000); // Toutes les 5 minutes
             },
 
             // Gestion du clic sur le bouton principal
@@ -693,6 +709,69 @@
             hideLoading() {
                 this.elements.loadingOverlay.setAttribute('aria-hidden', 'true');
                 this.elements.loadingOverlay.classList.remove('loading-overlay--visible');
+            },
+
+            // Vérification des mises à jour disponibles
+            async checkForUpdates() {
+                try {
+                    const response = await fetch('/api/discord/update/status');
+                    const updateStatus = await response.json();
+                    
+                    if (updateStatus.git_available && updateStatus.auto_update_enabled) {
+                        if (updateStatus.updates_available > 0) {
+                            this.elements.updateButton.style.display = 'flex';
+                            this.elements.updateCount.textContent = updateStatus.updates_available;
+                            this.elements.updateButton.title = `${updateStatus.updates_available} mise(s) à jour disponible(s)`;
+                        } else {
+                            this.elements.updateButton.style.display = 'none';
+                        }
+                    } else {
+                        this.elements.updateButton.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.log('Erreur lors de la vérification des mises à jour:', error);
+                    this.elements.updateButton.style.display = 'none';
+                }
+            },
+
+            // Gestion du clic sur le bouton de mise à jour
+            async handleUpdateClick() {
+                if (!confirm('Êtes-vous sûr de vouloir mettre à jour l\'application ? Cela redémarrera le service.')) {
+                    return;
+                }
+
+                try {
+                    this.showLoading('Mise à jour en cours...');
+                    this.addLog('Démarrage de la mise à jour...', 'info');
+                    
+                    // Désactiver le bouton pendant la mise à jour
+                    this.elements.updateButton.disabled = true;
+
+                    const response = await fetch('/api/discord/update', {
+                        method: 'POST'
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        this.addLog('Mise à jour effectuée avec succès', 'success');
+                        this.elements.updateButton.style.display = 'none';
+                        
+                        // Recharger la page après un délai
+                        setTimeout(() => {
+                            this.addLog('Rechargement de la page...', 'info');
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        this.addLog(result.error || 'Erreur lors de la mise à jour', 'error');
+                        this.elements.updateButton.disabled = false;
+                    }
+                } catch (error) {
+                    this.addLog('Erreur de connexion lors de la mise à jour: ' + error.message, 'error');
+                    this.elements.updateButton.disabled = false;
+                } finally {
+                    this.hideLoading();
+                }
             },
 
             // Fonction utilitaire pour échapper le HTML
