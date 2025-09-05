@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Monitor - Surveillance de Canal</title>
+    <meta name="description" content="Surveillez les messages de votre canal Discord en temps réel avec une interface web moderne et intuitive.">
+    
+    <!-- Styles externes -->
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Scripts externes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fab fa-discord" aria-hidden="true"></i> Discord Monitor</h1>
+            <p>Surveillez les messages de votre canal Discord en temps réel</p>
+        </header>
+
+        <main class="main-grid">
+            <!-- Configuration (masquée par défaut) -->
+            <section class="card" id="config-card" style="display: none;" aria-labelledby="config-title">
+                <h2 id="config-title">
+                    <i class="fas fa-cog" aria-hidden="true"></i>
+                    Configuration
+                    <span id="status-indicator" class="status-indicator status-disconnected" aria-label="Statut de connexion"></span>
+                </h2>
+                
+                <div id="alerts" role="alert" aria-live="polite"></div>
+
+                <form id="config-form" novalidate>
+                    <div class="form-group">
+                        <label for="token">Token du Bot Discord</label>
+                        <input 
+                            type="password" 
+                            id="token" 
+                            name="token"
+                            placeholder="Votre token de bot Discord"
+                            autocomplete="off"
+                            aria-describedby="token-help"
+                            required>
+                        <div class="help-text" id="token-help">
+                            <i class="fas fa-info-circle" aria-hidden="true"></i>
+                            Créez un bot sur <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer">Discord Developer Portal</a>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="guild-id">ID du Serveur Discord</label>
+                        <input 
+                            type="text" 
+                            id="guild-id" 
+                            name="guild-id"
+                            placeholder="123456789012345678"
+                            pattern="[0-9]{17,19}"
+                            aria-describedby="guild-help"
+                            required>
+                        <div class="help-text" id="guild-help">
+                            <i class="fas fa-info-circle" aria-hidden="true"></i>
+                            Clic droit sur votre serveur → Copier l'ID
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="channel-id">ID du Canal à Surveiller</label>
+                        <input 
+                            type="text" 
+                            id="channel-id" 
+                            name="channel-id"
+                            placeholder="123456789012345678"
+                            pattern="[0-9]{17,19}"
+                            aria-describedby="channel-help"
+                            required>
+                        <div class="help-text" id="channel-help">
+                            <i class="fas fa-info-circle" aria-hidden="true"></i>
+                            Clic droit sur le canal → Copier l'ID
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <button type="submit" class="btn btn-primary" aria-describedby="save-help">
+                            <i class="fas fa-save" aria-hidden="true"></i>
+                            Sauvegarder
+                        </button>
+                        <button type="button" id="start-btn" class="btn btn-success" disabled aria-describedby="start-help">
+                            <i class="fas fa-play" aria-hidden="true"></i>
+                            Démarrer
+                        </button>
+                        <button type="button" id="stop-btn" class="btn btn-danger" disabled aria-describedby="stop-help">
+                            <i class="fas fa-stop" aria-hidden="true"></i>
+                            Arrêter
+                        </button>
+                        <button type="button" id="hide-config-btn" class="btn btn-secondary">
+                            <i class="fas fa-eye-slash" aria-hidden="true"></i>
+                            Masquer
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Statut -->
+            <section class="card" aria-labelledby="status-title">
+                <h2 id="status-title">
+                    <i class="fas fa-chart-line" aria-hidden="true"></i> 
+                    Statut du Bot
+                </h2>
+                
+                <div id="status-info" role="status" aria-live="polite">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle" aria-hidden="true"></i>
+                        <span>Bot non configuré. Veuillez remplir la configuration.</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: var(--spacing-lg);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-md);">
+                        <h3 style="margin: 0; color: var(--color-primary);">
+                            <i class="fas fa-history" aria-hidden="true"></i>
+                            Logs récents
+                        </h3>
+                        <button type="button" id="show-config-btn" class="btn btn-secondary" style="font-size: var(--font-size-xs); padding: var(--spacing-sm) var(--spacing-md);">
+                            <i class="fas fa-cog" aria-hidden="true"></i>
+                            Configuration
+                        </button>
+                    </div>
+                    <div id="logs" role="log" aria-live="polite" aria-label="Journal des activités">
+                        <div style="color: var(--color-text-muted);">En attente de configuration...</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Messages -->
+        <section class="messages-container" aria-labelledby="messages-title">
+            <h2 id="messages-title" style="margin-bottom: var(--spacing-lg); color: var(--color-primary);">
+                <i class="fas fa-comments" aria-hidden="true"></i>
+                Messages en Temps Réel
+                <span id="message-count" style="font-size: var(--font-size-sm); color: var(--color-text-muted); font-weight: normal;">(0 messages)</span>
+            </h2>
+            
+            <div id="messages" role="log" aria-live="polite" aria-label="Messages Discord en temps réel">
+                <div class="no-messages">
+                    <i class="fas fa-comment-slash" style="font-size: 48px; margin-bottom: var(--spacing-md); opacity: 0.5;" aria-hidden="true"></i>
+                    <p>Aucun message reçu. Configurez et démarrez le bot pour commencer la surveillance.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Variables globales
+        let socket;
+        let messageCount = 0;
+        let isConfigured = false;
+
+        // Initialisation
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeSocket();
+            loadConfiguration();
+            setupEventListeners();
+        });
+
+        // Configuration Socket.IO
+        function initializeSocket() {
+            socket = io();
+            
+            socket.on('connect', function() {
+                addLog('Connexion WebSocket établie', 'success');
+            });
+
+            socket.on('disconnect', function() {
+                addLog('Connexion WebSocket fermée', 'error');
+            });
+
+            socket.on('new_message', function(data) {
+                addMessage(data);
+            });
+
+            socket.on('status_change', function(data) {
+                updateStatus(data.status, data.message);
+                addLog(data.message, data.status === 'error' ? 'error' : 'success');
+            });
+        }
+
+        // Chargement de la configuration
+        async function loadConfiguration() {
+            try {
+                const response = await fetch('/api/discord/config');
+                const config = await response.json();
+                
+                if (config.guild_id) {
+                    document.getElementById('guild-id').value = config.guild_id;
+                }
+                if (config.channel_id) {
+                    document.getElementById('channel-id').value = config.channel_id;
+                }
+                
+                isConfigured = config.token_configured;
+                updateUIState(config.status);
+                
+                if (isConfigured) {
+                    addLog('Configuration chargée depuis le fichier .env', 'success');
+                    // Masquer le bouton de configuration si déjà configuré
+                    const showConfigBtn = document.getElementById('show-config-btn');
+                    if (showConfigBtn) {
+                        showConfigBtn.style.display = 'none';
+                    }
+                } else {
+                    addLog('Configuration non trouvée - cliquez sur "Configuration" pour configurer', 'info');
+                }
+            } catch (error) {
+                showAlert('Erreur lors du chargement de la configuration', 'error');
+                addLog('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Configuration des événements
+        function setupEventListeners() {
+            document.getElementById('config-form').addEventListener('submit', saveConfiguration);
+            document.getElementById('start-btn').addEventListener('click', startBot);
+            document.getElementById('stop-btn').addEventListener('click', stopBot);
+            document.getElementById('show-config-btn').addEventListener('click', showConfig);
+            document.getElementById('hide-config-btn').addEventListener('click', hideConfig);
+        }
+
+        // Sauvegarde de la configuration
+        async function saveConfiguration(event) {
+            event.preventDefault();
+            
+            const token = document.getElementById('token').value.trim();
+            const guildId = document.getElementById('guild-id').value.trim();
+            const channelId = document.getElementById('channel-id').value.trim();
+
+            if (!token || !guildId || !channelId) {
+                showAlert('Tous les champs sont requis', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/discord/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        token: token,
+                        guild_id: guildId,
+                        channel_id: channelId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Configuration sauvegardée dans le fichier .env avec succès', 'success');
+                    isConfigured = true;
+                    updateUIState('disconnected');
+                    addLog('Configuration sauvegardée dans .env', 'success');
+                    
+                    // Masquer la configuration après sauvegarde
+                    setTimeout(() => {
+                        hideConfig();
+                    }, 2000);
+                } else {
+                    showAlert(result.error || 'Erreur lors de la sauvegarde', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur de connexion', 'error');
+                addLog('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Démarrage du bot
+        async function startBot() {
+            if (!isConfigured) {
+                showAlert('Veuillez d\'abord configurer le bot', 'error');
+                return;
+            }
+
+            try {
+                updateUIState('connecting');
+                addLog('Démarrage du bot...', 'info');
+
+                const response = await fetch('/api/discord/start', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Bot démarré avec succès', 'success');
+                    addLog('Bot démarré', 'success');
+                } else {
+                    showAlert(result.error || 'Erreur lors du démarrage', 'error');
+                    updateUIState('disconnected');
+                }
+            } catch (error) {
+                showAlert('Erreur de connexion', 'error');
+                updateUIState('disconnected');
+                addLog('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Arrêt du bot
+        async function stopBot() {
+            try {
+                const response = await fetch('/api/discord/stop', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Bot arrêté', 'info');
+                    updateUIState('disconnected');
+                    addLog('Bot arrêté', 'info');
+                } else {
+                    showAlert(result.error || 'Erreur lors de l\'arrêt', 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur de connexion', 'error');
+                addLog('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Mise à jour de l'état de l'interface
+        function updateUIState(status) {
+            const statusIndicator = document.getElementById('status-indicator');
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            const statusInfo = document.getElementById('status-info');
+
+            // Mise à jour de l'indicateur de statut
+            statusIndicator.className = `status-indicator status-${status}`;
+            statusIndicator.setAttribute('aria-label', `Statut: ${status}`);
+
+            // Mise à jour des boutons
+            switch (status) {
+                case 'connected':
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    statusInfo.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle" aria-hidden="true"></i>
+                            <span>Bot connecté et en surveillance</span>
+                        </div>
+                    `;
+                    break;
+                case 'connecting':
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    statusInfo.innerHTML = `
+                        <div class="alert alert-info">
+                            <div class="loading" aria-label="Chargement"></div>
+                            <span>Connexion en cours...</span>
+                        </div>
+                    `;
+                    break;
+                case 'disconnected':
+                default:
+                    startBtn.disabled = !isConfigured;
+                    stopBtn.disabled = true;
+                    statusInfo.innerHTML = `
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle" aria-hidden="true"></i>
+                            <span>${isConfigured ? 'Bot prêt à démarrer' : 'Bot non configuré'}</span>
+                        </div>
+                    `;
+                    break;
+            }
+        }
+
+        // Mise à jour du statut
+        function updateStatus(status, message) {
+            updateUIState(status);
+        }
+
+        // Ajout d'un message
+        function addMessage(messageData) {
+            const messagesContainer = document.getElementById('messages');
+            
+            // Supprimer le message "aucun message" s'il existe
+            const noMessages = messagesContainer.querySelector('.no-messages');
+            if (noMessages) {
+                noMessages.remove();
+            }
+
+            // Créer l'élément message
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message';
+            messageElement.setAttribute('role', 'article');
+            
+            const avatar = messageData.author.avatar_url 
+                ? `<img src="${messageData.author.avatar_url}" alt="Avatar de ${messageData.author.name}" style="width: 40px; height: 40px; border-radius: 50%;">`
+                : `<div class="message-avatar" aria-label="Avatar de ${messageData.author.name}">${messageData.author.name.charAt(0).toUpperCase()}</div>`;
+
+            const timestamp = new Date(messageData.timestamp).toLocaleString('fr-FR');
+
+            messageElement.innerHTML = `
+                ${avatar}
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-author">${escapeHtml(messageData.author.name)}</span>
+                        <time class="message-time" datetime="${messageData.timestamp}">${timestamp}</time>
+                    </div>
+                    <div class="message-text">${escapeHtml(messageData.content) || '<em>Message sans texte</em>'}</div>
+                    ${messageData.attachments.length > 0 ? `
+                        <div style="margin-top: var(--spacing-sm);">
+                            ${messageData.attachments.map(att => `
+                                <div style="font-size: var(--font-size-xs); color: var(--color-text-muted);">
+                                    <i class="fas fa-paperclip" aria-hidden="true"></i> ${escapeHtml(att.filename)}
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            // Ajouter en haut de la liste
+            messagesContainer.insertBefore(messageElement, messagesContainer.firstChild);
+
+            // Limiter le nombre de messages affichés
+            const messages = messagesContainer.querySelectorAll('.message');
+            if (messages.length > 50) {
+                messages[messages.length - 1].remove();
+            }
+
+            // Mettre à jour le compteur
+            messageCount++;
+            document.getElementById('message-count').textContent = `(${messageCount} message${messageCount > 1 ? 's' : ''})`;
+        }
+
+        // Fonction utilitaire pour échapper le HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Affichage d'alertes
+        function showAlert(message, type) {
+            const alertsContainer = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.setAttribute('role', 'alert');
+            
+            const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle';
+            alert.innerHTML = `
+                <i class="fas fa-${icon}" aria-hidden="true"></i>
+                <span>${escapeHtml(message)}</span>
+            `;
+
+            alertsContainer.appendChild(alert);
+
+            // Supprimer l'alerte après 5 secondes
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
+        // Ajout de logs
+        function addLog(message, type) {
+            const logsContainer = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString('fr-FR');
+            const logEntry = document.createElement('div');
+            
+            const colorMap = {
+                'success': 'var(--color-success)',
+                'error': 'var(--color-error)',
+                'info': 'var(--color-text-muted)'
+            };
+            
+            logEntry.style.color = colorMap[type] || 'var(--color-text-muted)';
+            logEntry.style.marginBottom = 'var(--spacing-xs)';
+            logEntry.textContent = `[${timestamp}] ${message}`;
+
+            logsContainer.insertBefore(logEntry, logsContainer.firstChild);
+
+            // Limiter le nombre de logs
+            const logs = logsContainer.children;
+            if (logs.length > 20) {
+                logs[logs.length - 1].remove();
+            }
+        }
+
+        // Affichage de la configuration
+        function showConfig() {
+            const configCard = document.getElementById('config-card');
+            const showConfigBtn = document.getElementById('show-config-btn');
+            
+            configCard.style.display = 'block';
+            showConfigBtn.style.display = 'none';
+            
+            // Focus sur le premier champ pour l'accessibilité
+            const firstInput = configCard.querySelector('input');
+            if (firstInput) {
+                firstInput.focus();
+            }
+            
+            // Scroll vers la configuration
+            configCard.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Masquage de la configuration
+        function hideConfig() {
+            const configCard = document.getElementById('config-card');
+            const showConfigBtn = document.getElementById('show-config-btn');
+            
+            configCard.style.display = 'none';
+            showConfigBtn.style.display = 'inline-flex';
+        }
+    </script>
+</body>
+</html>
+
