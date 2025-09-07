@@ -525,3 +525,209 @@ def get_update_status():
             'error': str(e)
         })
 
+
+
+@discord_bp.route('/messages/config', methods=['GET'])
+def get_messages_config():
+    """Récupère la configuration des messages"""
+    config = {
+        'fetch_mode': os.getenv('MESSAGE_FETCH_MODE', 'latest'),
+        'fetch_limit': os.getenv('MESSAGE_FETCH_LIMIT', '100'),
+        'fetch_period': os.getenv('MESSAGE_FETCH_PERIOD', '7d'),
+        'dangerous_actions': os.getenv('MESSAGE_DANGEROUS_ACTIONS', 'False').lower() == 'true'
+    }
+    return jsonify(config)
+
+@discord_bp.route('/messages/config', methods=['POST'])
+def update_messages_config():
+    """Met à jour la configuration des messages"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'Données JSON requises'}), 400
+    
+    # Valider les valeurs
+    valid_modes = ['latest', 'history']
+    valid_limits = ['50', '100', '500', '1000', 'unlimited']
+    valid_periods = ['24h', '7d', '30d', 'all']
+    
+    fetch_mode = data.get('fetch_mode', 'latest')
+    fetch_limit = data.get('fetch_limit', '100')
+    fetch_period = data.get('fetch_period', '7d')
+    dangerous_actions = data.get('dangerous_actions', False)
+    
+    if fetch_mode not in valid_modes:
+        return jsonify({'error': f'Mode invalide. Valeurs acceptées: {valid_modes}'}), 400
+    
+    if fetch_limit not in valid_limits:
+        return jsonify({'error': f'Limite invalide. Valeurs acceptées: {valid_limits}'}), 400
+    
+    if fetch_period not in valid_periods:
+        return jsonify({'error': f'Période invalide. Valeurs acceptées: {valid_periods}'}), 400
+    
+    try:
+        # Sauvegarder dans le fichier .env
+        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+        
+        # Lire le fichier .env existant
+        env_lines = []
+        if os.path.exists(env_path):
+            with open(env_path, 'r', encoding='utf-8') as f:
+                env_lines = f.readlines()
+        
+        # Mettre à jour les variables
+        updated_vars = {
+            'MESSAGE_FETCH_MODE': fetch_mode,
+            'MESSAGE_FETCH_LIMIT': fetch_limit,
+            'MESSAGE_FETCH_PERIOD': fetch_period,
+            'MESSAGE_DANGEROUS_ACTIONS': str(dangerous_actions)
+        }
+        
+        # Mettre à jour les lignes existantes ou ajouter de nouvelles
+        updated_lines = []
+        found_vars = set()
+        
+        for line in env_lines:
+            line_stripped = line.strip()
+            if '=' in line_stripped and not line_stripped.startswith('#'):
+                var_name = line_stripped.split('=')[0].strip()
+                if var_name in updated_vars:
+                    updated_lines.append(f"{var_name}={updated_vars[var_name]}\n")
+                    found_vars.add(var_name)
+                else:
+                    updated_lines.append(line)
+            else:
+                updated_lines.append(line)
+        
+        # Ajouter les variables manquantes
+        for var_name, var_value in updated_vars.items():
+            if var_name not in found_vars:
+                updated_lines.append(f"{var_name}={var_value}\n")
+        
+        # Écrire le fichier .env mis à jour
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.writelines(updated_lines)
+        
+        # Recharger les variables d'environnement
+        load_dotenv(override=True)
+        
+        return jsonify({'message': 'Configuration des messages sauvegardée avec succès'})
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur lors de la sauvegarde: {str(e)}'}), 500
+
+@discord_bp.route('/messages/fetch-history', methods=['POST'])
+def fetch_message_history():
+    """Récupère l'historique des messages selon la configuration"""
+    if not discord_monitor:
+        return jsonify({'error': 'Monitor Discord non initialisé'}), 500
+    
+    if not discord_monitor.is_running:
+        return jsonify({'error': 'Bot Discord non connecté'}), 400
+    
+    try:
+        # Récupérer la configuration
+        fetch_mode = os.getenv('MESSAGE_FETCH_MODE', 'latest')
+        fetch_limit = os.getenv('MESSAGE_FETCH_LIMIT', '100')
+        fetch_period = os.getenv('MESSAGE_FETCH_PERIOD', '7d')
+        
+        if fetch_mode == 'latest':
+            return jsonify({'message': 'Mode "dernier message" activé, aucune récupération d\'historique nécessaire'})
+        
+        # Calculer la limite numérique
+        if fetch_limit == 'unlimited':
+            limit = None
+        else:
+            limit = int(fetch_limit)
+        
+        # Calculer la date limite
+        from datetime import datetime, timedelta
+        
+        if fetch_period == 'all':
+            after_date = None
+        else:
+            period_map = {
+                '24h': timedelta(hours=24),
+                '7d': timedelta(days=7),
+                '30d': timedelta(days=30)
+            }
+            after_date = datetime.utcnow() - period_map[fetch_period]
+        
+        # Récupérer les messages via le bot Discord
+        messages = discord_monitor.fetch_message_history(limit=limit, after=after_date)
+        
+        return jsonify({
+            'message': f'Récupération de {len(messages)} messages terminée',
+            'count': len(messages),
+            'config': {
+                'mode': fetch_mode,
+                'limit': fetch_limit,
+                'period': fetch_period
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur lors de la récupération: {str(e)}'}), 500
+
+@discord_bp.route('/messages/delete-all', methods=['POST'])
+def delete_all_messages():
+    """Supprime tous les messages du canal (ACTION CRITIQUE)"""
+    if not discord_monitor:
+        return jsonify({'error': 'Monitor Discord non initialisé'}), 500
+    
+    if not discord_monitor.is_running:
+        return jsonify({'error': 'Bot Discord non connecté'}), 400
+    
+    # Vérifier si les actions dangereuses sont activées
+    dangerous_actions = os.getenv('MESSAGE_DANGEROUS_ACTIONS', 'False').lower() == 'true'
+    if not dangerous_actions:
+        return jsonify({'error': 'Actions dangereuses désactivées. Activez MESSAGE_DANGEROUS_ACTIONS dans la configuration.'}), 403
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Données JSON requises'}), 400
+    
+    # Vérifications de sécurité
+    required_fields = ['confirmation_text', 'channel_name_confirmation']
+    for field in required_fields:
+        if field not in data or not data[field]:
+            return jsonify({'error': f'Le champ {field} est requis pour cette action critique'}), 400
+    
+    # Vérifier la confirmation textuelle
+    if data['confirmation_text'] != 'DELETE ALL MESSAGES':
+        return jsonify({'error': 'Texte de confirmation incorrect. Tapez exactement: DELETE ALL MESSAGES'}), 400
+    
+    try:
+        # Récupérer le nom du canal pour vérification
+        channel_name = discord_monitor.get_channel_name()
+        if data['channel_name_confirmation'] != channel_name:
+            return jsonify({'error': f'Nom du canal incorrect. Tapez exactement: {channel_name}'}), 400
+        
+        # Créer une sauvegarde avant suppression
+        backup_file = discord_monitor.create_messages_backup()
+        
+        # Supprimer tous les messages
+        deleted_count = discord_monitor.delete_all_messages()
+        
+        return jsonify({
+            'message': f'Suppression terminée: {deleted_count} messages supprimés',
+            'deleted_count': deleted_count,
+            'backup_file': backup_file,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur lors de la suppression: {str(e)}'}), 500
+
+@discord_bp.route('/messages/stats', methods=['GET'])
+def get_messages_stats():
+    """Récupère les statistiques des messages"""
+    if not discord_monitor:
+        return jsonify({'error': 'Monitor Discord non initialisé'}), 500
+    
+    try:
+        stats = discord_monitor.get_messages_stats()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': f'Erreur lors de la récupération des stats: {str(e)}'}), 500
+

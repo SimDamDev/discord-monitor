@@ -179,6 +179,90 @@
                             </div>
                         </div>
 
+                        <!-- Configuration des Messages -->
+                        <div class="form-section">
+                            <h3 class="form-section-title">
+                                <i class="fas fa-comments" aria-hidden="true"></i>
+                                Configuration des Messages
+                            </h3>
+                            
+                            <div class="form-group">
+                                <label for="fetch-mode" class="form-label">
+                                    <i class="fas fa-download" aria-hidden="true"></i>
+                                    Mode de récupération
+                                </label>
+                                <select id="fetch-mode" name="fetch-mode" class="form-select" aria-describedby="fetch-mode-help">
+                                    <option value="latest">Dernier message uniquement</option>
+                                    <option value="history">Historique complet</option>
+                                </select>
+                                <div class="form-help" id="fetch-mode-help">
+                                    <i class="fas fa-info-circle" aria-hidden="true"></i>
+                                    Choisissez si vous voulez récupérer seulement les nouveaux messages ou tout l'historique
+                                </div>
+                            </div>
+
+                            <div class="form-group" id="history-options" style="display: none;">
+                                <label for="fetch-limit" class="form-label">
+                                    <i class="fas fa-list-ol" aria-hidden="true"></i>
+                                    Limite de messages
+                                </label>
+                                <select id="fetch-limit" name="fetch-limit" class="form-select">
+                                    <option value="50">50 messages</option>
+                                    <option value="100">100 messages</option>
+                                    <option value="500">500 messages</option>
+                                    <option value="1000">1000 messages</option>
+                                    <option value="unlimited">Illimité</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group" id="period-options" style="display: none;">
+                                <label for="fetch-period" class="form-label">
+                                    <i class="fas fa-calendar-alt" aria-hidden="true"></i>
+                                    Période
+                                </label>
+                                <select id="fetch-period" name="fetch-period" class="form-select">
+                                    <option value="24h">Dernières 24 heures</option>
+                                    <option value="7d">7 derniers jours</option>
+                                    <option value="30d">30 derniers jours</option>
+                                    <option value="all">Tout l'historique</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-checkbox">
+                                    <input type="checkbox" id="dangerous-actions" name="dangerous-actions">
+                                    <span class="form-checkbox-mark"></span>
+                                    <span class="form-checkbox-label">
+                                        <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                                        Activer les actions dangereuses
+                                    </span>
+                                </label>
+                                <div class="form-help">
+                                    <i class="fas fa-warning" aria-hidden="true"></i>
+                                    ⚠️ Permet la suppression de tous les messages du canal
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Zone Dangereuse -->
+                        <div class="form-section danger-zone" id="danger-zone" style="display: none;">
+                            <h3 class="form-section-title danger-title">
+                                <i class="fas fa-skull-crossbones" aria-hidden="true"></i>
+                                🚨 Zone Dangereuse
+                            </h3>
+                            
+                            <div class="danger-actions">
+                                <button type="button" class="btn btn--danger" id="delete-all-messages">
+                                    <i class="fas fa-trash-alt" aria-hidden="true"></i>
+                                    Supprimer tous les messages
+                                </button>
+                                <div class="form-help danger-help">
+                                    <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                                    Cette action est <strong>irréversible</strong> ! Une sauvegarde sera créée automatiquement.
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="config-modal__actions">
                             <button type="button" class="btn btn--secondary" id="config-cancel">
                                 <i class="fas fa-times" aria-hidden="true"></i>
@@ -246,6 +330,16 @@
                 this.elements.messageCount = document.getElementById('message-count');
                 this.elements.connectionStatus = document.getElementById('connection-status');
                 this.elements.loadingOverlay = document.getElementById('loading-overlay');
+                
+                // Nouveaux éléments pour la configuration des messages
+                this.elements.fetchModeSelect = document.getElementById('fetch-mode');
+                this.elements.fetchLimitSelect = document.getElementById('fetch-limit');
+                this.elements.fetchPeriodSelect = document.getElementById('fetch-period');
+                this.elements.dangerousActionsCheckbox = document.getElementById('dangerous-actions');
+                this.elements.historyOptions = document.getElementById('history-options');
+                this.elements.periodOptions = document.getElementById('period-options');
+                this.elements.dangerZone = document.getElementById('danger-zone');
+                this.elements.deleteAllMessagesButton = document.getElementById('delete-all-messages');
             },
 
             // Configuration Socket.IO
@@ -286,6 +380,19 @@
                 document.getElementById('config-modal-backdrop').addEventListener('click', () => this.closeConfigModal());
                 document.getElementById('config-cancel').addEventListener('click', () => this.closeConfigModal());
                 document.getElementById('config-form').addEventListener('submit', (e) => this.handleConfigSubmit(e));
+                
+                // Nouveaux événements pour la configuration des messages
+                if (this.elements.fetchModeSelect) {
+                    this.elements.fetchModeSelect.addEventListener('change', () => this.handleFetchModeChange());
+                }
+                
+                if (this.elements.dangerousActionsCheckbox) {
+                    this.elements.dangerousActionsCheckbox.addEventListener('change', () => this.handleDangerousActionsChange());
+                }
+                
+                if (this.elements.deleteAllMessagesButton) {
+                    this.elements.deleteAllMessagesButton.addEventListener('click', () => this.handleDeleteAllMessages());
+                }
                 
                 // Gestion du clavier pour la modal
                 document.addEventListener('keydown', (e) => {
@@ -595,6 +702,10 @@
                         this.updateState('not-configured');
                         this.addLog('Configuration requise', 'info');
                     }
+                    
+                    // Charger aussi la configuration des messages
+                    await this.loadMessagesConfig();
+                    
                 } catch (error) {
                     this.addLog('Erreur lors du chargement de la configuration', 'error');
                 }
@@ -868,6 +979,214 @@
                         heroSection.innerHTML = '';
                         heroSection.appendChild(reloadButton);
                     }
+                }
+            },
+
+            // Gestion du changement de mode de récupération
+            handleFetchModeChange() {
+                const mode = this.elements.fetchModeSelect.value;
+                const historyOptions = this.elements.historyOptions;
+                const periodOptions = this.elements.periodOptions;
+                
+                if (mode === 'history') {
+                    historyOptions.style.display = 'block';
+                    periodOptions.style.display = 'block';
+                } else {
+                    historyOptions.style.display = 'none';
+                    periodOptions.style.display = 'none';
+                }
+            },
+
+            // Gestion du changement d'actions dangereuses
+            handleDangerousActionsChange() {
+                const enabled = this.elements.dangerousActionsCheckbox.checked;
+                const dangerZone = this.elements.dangerZone;
+                
+                if (enabled) {
+                    dangerZone.style.display = 'block';
+                } else {
+                    dangerZone.style.display = 'none';
+                }
+            },
+
+            // Gestion de la suppression de tous les messages
+            async handleDeleteAllMessages() {
+                // Créer et afficher la modal de confirmation critique
+                const modal = this.createCriticalConfirmationModal();
+                document.body.appendChild(modal);
+                
+                // Récupérer le nom du canal pour la confirmation
+                try {
+                    const statsResponse = await fetch('/api/discord/messages/stats');
+                    const stats = await statsResponse.json();
+                    const channelName = stats.channel_name || 'canal-inconnu';
+                    
+                    modal.querySelector('#critical-channel-name').textContent = channelName;
+                    modal.querySelector('#channel-name-input').setAttribute('data-expected', channelName);
+                } catch (error) {
+                    this.addLog('Erreur lors de la récupération du nom du canal', 'error');
+                    document.body.removeChild(modal);
+                    return;
+                }
+            },
+
+            // Création de la modal de confirmation critique
+            createCriticalConfirmationModal() {
+                const modal = document.createElement('div');
+                modal.className = 'critical-modal';
+                modal.innerHTML = `
+                    <div class="critical-modal__content">
+                        <div class="critical-modal__header">
+                            <h2 class="critical-modal__title">
+                                <i class="fas fa-skull-crossbones"></i>
+                                Action Critique
+                            </h2>
+                        </div>
+                        
+                        <div class="critical-modal__warning">
+                            <strong>⚠️ ATTENTION !</strong><br>
+                            Vous êtes sur le point de supprimer <strong>TOUS les messages</strong> du canal <strong id="critical-channel-name"></strong>.<br><br>
+                            Cette action est <strong>IRRÉVERSIBLE</strong> !<br>
+                            Une sauvegarde sera créée automatiquement.
+                        </div>
+                        
+                        <div>
+                            <label for="confirmation-input">Tapez <strong>DELETE ALL MESSAGES</strong> pour confirmer :</label>
+                            <input type="text" id="confirmation-input" class="critical-modal__input" placeholder="DELETE ALL MESSAGES">
+                        </div>
+                        
+                        <div>
+                            <label for="channel-name-input">Tapez le nom exact du canal pour confirmer :</label>
+                            <input type="text" id="channel-name-input" class="critical-modal__input" placeholder="nom-du-canal">
+                        </div>
+                        
+                        <div class="critical-modal__actions">
+                            <button type="button" class="btn btn--secondary" id="critical-cancel">
+                                <i class="fas fa-times"></i>
+                                Annuler
+                            </button>
+                            <button type="button" class="btn btn--danger" id="critical-confirm" disabled>
+                                <i class="fas fa-trash-alt"></i>
+                                Supprimer TOUT
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // Ajouter les événements
+                const confirmationInput = modal.querySelector('#confirmation-input');
+                const channelNameInput = modal.querySelector('#channel-name-input');
+                const confirmButton = modal.querySelector('#critical-confirm');
+                const cancelButton = modal.querySelector('#critical-cancel');
+                
+                const validateInputs = () => {
+                    const confirmationValid = confirmationInput.value === 'DELETE ALL MESSAGES';
+                    const channelNameValid = channelNameInput.value === channelNameInput.getAttribute('data-expected');
+                    confirmButton.disabled = !(confirmationValid && channelNameValid);
+                };
+                
+                confirmationInput.addEventListener('input', validateInputs);
+                channelNameInput.addEventListener('input', validateInputs);
+                
+                cancelButton.addEventListener('click', () => {
+                    modal.classList.remove('active');
+                    setTimeout(() => document.body.removeChild(modal), 300);
+                });
+                
+                confirmButton.addEventListener('click', async () => {
+                    await this.executeDeleteAllMessages(modal);
+                });
+                
+                // Afficher la modal
+                setTimeout(() => modal.classList.add('active'), 10);
+                
+                return modal;
+            },
+
+            // Exécution de la suppression de tous les messages
+            async executeDeleteAllMessages(modal) {
+                try {
+                    this.showLoading('Suppression de tous les messages en cours...');
+                    this.addLog('🗑️ Démarrage de la suppression de tous les messages...', 'warning');
+                    
+                    const confirmationText = modal.querySelector('#confirmation-input').value;
+                    const channelNameConfirmation = modal.querySelector('#channel-name-input').value;
+                    
+                    const response = await fetch('/api/discord/messages/delete-all', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            confirmation_text: confirmationText,
+                            channel_name_confirmation: channelNameConfirmation
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        this.addLog(`✅ Suppression terminée: ${result.deleted_count} messages supprimés`, 'success');
+                        this.addLog(`💾 Sauvegarde créée: ${result.backup_file}`, 'info');
+                        
+                        // Fermer la modal
+                        modal.classList.remove('active');
+                        setTimeout(() => document.body.removeChild(modal), 300);
+                        
+                        // Rafraîchir les statistiques
+                        this.refreshMessageStats();
+                    } else {
+                        this.addLog(`❌ Erreur lors de la suppression: ${result.error}`, 'error');
+                    }
+                } catch (error) {
+                    this.addLog(`❌ Erreur de connexion: ${error.message}`, 'error');
+                } finally {
+                    this.hideLoading();
+                }
+            },
+
+            // Rafraîchissement des statistiques des messages
+            async refreshMessageStats() {
+                try {
+                    const response = await fetch('/api/discord/messages/stats');
+                    const stats = await response.json();
+                    
+                    if (response.ok) {
+                        this.addLog(`📊 Statistiques mises à jour: ${stats.total_messages} messages au total`, 'info');
+                    }
+                } catch (error) {
+                    console.error('Erreur lors du rafraîchissement des stats:', error);
+                }
+            },
+
+            // Chargement de la configuration des messages
+            async loadMessagesConfig() {
+                try {
+                    const response = await fetch('/api/discord/messages/config');
+                    const config = await response.json();
+                    
+                    if (response.ok) {
+                        // Appliquer la configuration à l'interface
+                        if (this.elements.fetchModeSelect) {
+                            this.elements.fetchModeSelect.value = config.fetch_mode || 'latest';
+                            this.handleFetchModeChange();
+                        }
+                        
+                        if (this.elements.fetchLimitSelect) {
+                            this.elements.fetchLimitSelect.value = config.fetch_limit || '100';
+                        }
+                        
+                        if (this.elements.fetchPeriodSelect) {
+                            this.elements.fetchPeriodSelect.value = config.fetch_period || '7d';
+                        }
+                        
+                        if (this.elements.dangerousActionsCheckbox) {
+                            this.elements.dangerousActionsCheckbox.checked = config.dangerous_actions || false;
+                            this.handleDangerousActionsChange();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erreur lors du chargement de la config messages:', error);
                 }
             },
 
